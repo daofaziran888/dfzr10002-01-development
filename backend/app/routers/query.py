@@ -13,6 +13,7 @@ router = APIRouter(prefix="/api/query", tags=["聚合查询配置"])
 service = QueryService()
 
 LIST_FIELDS = ["模板编号", "模板名称", "查询语句", "参数定义", "缓存时间", "结果上限", "执行超时", "模板版本"]
+CONSUMER_FIELDS = ["引用指标编号", "引用指标版本", "指标确认状态", "指标最后确认时间", "消费状态"]
 STATUSES = ["草稿", "待审批", "已发布", "已停用"]
 
 
@@ -20,13 +21,16 @@ STATUSES = ["草稿", "待审批", "已发布", "已停用"]
 def list_entries(
     keyword: str | None = Query(default=None, description="按模板编号检索"),
     status: str | None = Query(default=None, description="草稿、待审批、已发布、已停用"),
+    indicator_code: str | None = Query(default=None, description="按引用的指标编号过滤"),
     page: int = 1,
     size: int = 20,
 ) -> PageResult[dict]:
-    """按模板编号与状态过滤聚合查询配置列表；没有数据时返回空页，不报错。"""
+    """按模板编号、状态与引用指标过滤聚合查询配置列表；没有数据时返回空页，不报错。"""
     if size > 200:
         raise HTTPException(status_code=400, detail="每页最多 200 条，请缩小分页范围")
-    items, total = service.list_entries(keyword=keyword, status=status, page=page, size=size)
+    items, total = service.list_entries(
+        keyword=keyword, status=status, indicator_code=indicator_code, page=page, size=size
+    )
     return PageResult(items=items, total=total, page=page, size=size)
 
 
@@ -42,7 +46,7 @@ def get_entry(entry_id: int) -> dict:
 @router.post("", response_model=ActionResult)
 def create_entry(payload: EntryPayload) -> ActionResult:
     """登记一条查询模板，缺字段时说明原因而不是静默丢弃。"""
-    entry, missing = service.create_entry(payload.values)
+    entry, missing = service.create_entry(payload.resolved_values())
     if missing:
         return ActionResult(ok=False, message=f"缺少必填字段：{'、'.join(missing)}")
     return ActionResult(ok=True, message="查询模板已登记", entry=entry)
@@ -50,8 +54,8 @@ def create_entry(payload: EntryPayload) -> ActionResult:
 
 @router.post("/{entry_id}/actions", response_model=ActionResult)
 def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
-    """对单条查询模板执行提交审批、发布模板、停用模板；不允许的动作会被拦下并说明原因。"""
-    action = str(payload.values.get("action") or "").strip()
+    """对单条查询模板执行提交审批、发布模板、停用模板；指标口径未确认的模板会被拦下。"""
+    action = str(payload.resolved_values().get("action") or "").strip()
     entry, message = service.run_action(entry_id, action)
     if entry is None:
         return ActionResult(ok=False, message=message)

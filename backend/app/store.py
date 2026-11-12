@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 from app.seed import SEED_ROWS
@@ -11,12 +12,21 @@ from app.seed import SEED_ROWS
 
 class Store:
     def __init__(self) -> None:
+        # 深拷贝：版本记录、确认记录都是嵌套结构，浅拷贝会让多个 Store 实例
+        # 共享同一份列表，测试或多次初始化时互相污染。
         self._tables: dict[str, list[dict[str, Any]]] = {
-            name: [dict(row) for row in rows] for name, rows in SEED_ROWS.items()
+            name: copy.deepcopy(rows) for name, rows in SEED_ROWS.items()
         }
 
     def module_names(self) -> list[str]:
-        return sorted(self._tables)
+        # 下划线开头的表是跨模块共用的内部记录（如消费方确认），不当作业务模块统计。
+        return sorted(name for name in self._tables if not name.startswith("_"))
+
+    def reset(self) -> None:
+        """恢复示例数据：测试和本地演示需要从同一份初始状态开始。"""
+        self._tables = {
+            name: copy.deepcopy(rows) for name, rows in SEED_ROWS.items()
+        }
 
     def rows(self, module: str) -> list[dict[str, Any]]:
         return self._tables.setdefault(module, [])

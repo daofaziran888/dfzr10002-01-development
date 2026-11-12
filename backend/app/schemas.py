@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Generic, TypeVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 T = TypeVar("T")
 
@@ -22,10 +22,21 @@ class ActionResult(BaseModel):
 
 
 class EntryPayload(BaseModel):
-    """登记或修改一条业务记录时提交的字段集合。"""
+    """登记或修改一条业务记录时提交的字段集合。
+
+    既支持前端直接提交扁平字段（{"action": "提交审批"}），也兼容
+    {"values": {...}, "remark": "..."} 的包裹写法；两者合并后 values 优先。
+    """
+
+    model_config = ConfigDict(extra="allow")
 
     values: dict[str, Any] = Field(default_factory=dict)
     remark: str | None = None
+
+    def resolved_values(self) -> dict[str, Any]:
+        flat = {key: value for key, value in self.model_extra.items()}
+        flat.update(self.values)
+        return flat
 
 
 
